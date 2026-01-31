@@ -40,22 +40,20 @@ THE SOFTWARE.
 
 ---------------------------------------------------------
 
-local constants = require(script.Constants)
-local statistics = require(script.Statistics)
-local util = require(script.Util)
-local models = require(script.Models)
-
-type rating = {
-	mu: number,
-	sigma: number
+local constants = require("Constants")
+local statistics = require("Statistics")
+local util = require("Util")
+local models = {
+	PlackettLuce = require("Models.PlackettLuce"),
+	ThurstoneMosteller = require("Models.ThurstoneMosteller"),
 }
 
-function module.Ordinal(rating:rating, options:any?):number
+function module.Ordinal(rating, options)
 	options = options or {}
 	return rating.mu - constants.z(options) * rating.sigma
 end
 
-function module.Rating(mu:number?, sigma:number?, options:any?):rating
+function module.Rating(mu, sigma, options)
 	options = options or {}
 	local copy = {} --copy because i dont want to change the options table
 	for k, v in next, options do
@@ -68,7 +66,7 @@ function module.Rating(mu:number?, sigma:number?, options:any?):rating
 	}
 end
 
-function module.Rate(teams:{{rating}}, options:any?):{{{number}}}
+function module.Rate(teams, options)
 	options = options or {}
 	local model = models[options.model or module.Settings.DefaultModel]
 	if options.rank == nil and options.score == nil then
@@ -106,18 +104,20 @@ function module.Rate(teams:{{rating}}, options:any?):{{{number}}}
 	return reorderedTeams
 end
 
-function module.WinProbability(teams:{{rating}}, options:any?):{number}
+function module.WinProbability(teams, options)
 	options = options or {}
+	local n = #teams
+	if n == 0 then return {} end
+	if n == 1 then return {1} end
 	local teamRatings = util.teamRating(teams, options)
 	local betaSq = constants.betaSq(options)
-	local n = #teams
 	local denom = (n * (n - 1)) / 2
 	local result = {}
 	for i, a in ipairs(teamRatings) do
 		local prob = 0
 		for q, b in ipairs(teamRatings) do
 			if i ~= q then
-				prob += statistics.phiMajor(
+				prob = prob + statistics.phiMajor(
 					(a[1] - b[1]) / math.sqrt(n * betaSq + a[2] ^ 2 + b[2] ^ 2))
 			end
 		end
@@ -126,17 +126,17 @@ function module.WinProbability(teams:{{rating}}, options:any?):{number}
 	return result
 end
 
-function module.DrawProbability(teams:{{rating}}, options:any?):number
+function module.DrawProbability(teams, options)
 	options = options or {}
 	local teamRatings = util.teamRating(teams, options)
 	local betaSq, beta = constants.betaSq(options), constants.beta(options)
 	local n = #teams
 	if n == 0 then return
 	elseif n == 1 then return 1 end
-	local denom = (n * (n - 1)) / (if n > 2 then 1 else 2)
+	local denom = (n * (n - 1)) / (n > 2 and 1 or 2)
 	local playerCount = 0
 	for _, v in ipairs(teams) do
-		playerCount += #v
+		playerCount = playerCount + #v
 	end
 	local drawMargin = math.sqrt(playerCount) * beta * statistics.phiMajorInverse((1 + 1 / n) / 2)	
 	local result = 0
@@ -144,7 +144,7 @@ function module.DrawProbability(teams:{{rating}}, options:any?):number
 		for q, b in ipairs(teamRatings) do
 			if i ~= q then
 				local sigmaBar = math.sqrt(n * betaSq + a[2] ^ 2 + b[2] ^ 2)
-				result += statistics.phiMajor((drawMargin - a[1] + b[1]) / sigmaBar) -
+				result = result + statistics.phiMajor((drawMargin - a[1] + b[1]) / sigmaBar) -
 						statistics.phiMajor((a[1] - b[1] - drawMargin) / sigmaBar)
 			end
 		end
